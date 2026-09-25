@@ -1,0 +1,60 @@
+name: Publish encrypted appliance update
+on:
+  push:
+    branches: [main]
+    paths: [source-commit]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: public-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Read tested source revision
+        id: source
+        run: |
+          commit=$(cat source-commit)
+          [[ "$commit" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "tag=build-${commit:0:12}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: kaushalkchoudhary/radxa-setup
+          ref: ${{ steps.source.outputs.commit }}
+          ssh-key: ${{ secrets.SOURCE_READ_KEY }}
+          persist-credentials: false
+          path: source
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: source/backend/go.mod
+          cache-dependency-path: |
+            source/backend/go.sum
+            source/backend/edge-agent/go.sum
+          cache: false
+      - name: Build and encrypt
+        working-directory: source
+        env:
+          RELEASE_CODE: ${{ secrets.RELEASE_CODE }}
+          RELEASE_TAG: ${{ steps.source.outputs.tag }}
+        run: ./build/package-release.sh
+      - name: Publish verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.source.outputs.tag }}
+        run: |
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            [ "$draft" = true ] || exit 0
+          else
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --draft \
+              --title "MagicBox $RELEASE_TAG" --notes-file README.md
+          fi
+          gh release upload "$RELEASE_TAG" source/bin/public/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
