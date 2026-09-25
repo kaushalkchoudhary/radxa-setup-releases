@@ -10,11 +10,14 @@ Open **Device → Software**. When an update is available, enter the security co
 and select **Install update**. Downloads are authenticated and verified before
 installation. Existing setup, cameras, networks, passwords and enrollment are
 retained. The installer backs up the application and attempts rollback if startup
-fails. Keep the box powered on during installation.
+fails. Keep the box powered on; rollback does not guarantee recovery from power
+loss or restore all kernel/network changes. Confirm pending network changes first.
 
 ## Install directly on an online box
 
-Requires curl, SHA256 tools, root/sudo, and the supported vendor networking image.
+Requires curl, SHA256 tools, root/sudo, and a supported NetworkManager/systemd or
+netifd/procd image with `ip`, `iptables`, `nft`, `wg` and `tc`. The installer checks
+prerequisites; it does not install missing system packages.
 This also upgrades boxes that do not yet have the update UI.
 
 ```sh
@@ -39,15 +42,23 @@ sh "$tools_dir/deploy.sh" radxa@BOX_IP
 
 The box does not need internet access or GitHub credentials for this method.
 Use an SSH config alias for custom ports/keys. Set `RADXA_VERSION` to a release
-tag to select a particular build. Installation continues if restarting the
-console drops the SSH connection; the helper prints its log/result paths.
+tag to select a particular build. Helpers support ARM64/AMD64 Linux and macOS.
+Installation continues if restarting the console drops the SSH connection;
+the helper prints its log/result paths.
+
+## Troubleshooting
+
+UI checks retry automatically after connectivity failures. Failed UI jobs keep
+logs under `/var/lib/magicbox-updates`; backups are under
+`/var/backups/orion-appliance`. Ask your administrator for the code for the chosen
+release; changing the code for a new release does not unlock older releases.
 
 ## Package format
 
 `manifest.json` identifies the source revision, release, sizes and SHA256 hashes.
 The appliance executable is encrypted with AES-256-GCM using a fresh salt/nonce
 and PBKDF2-HMAC-SHA256 (600,000 iterations). A wrong code or changed ciphertext
-fails authentication before any executable is written or run.
+fails authentication before the appliance executable is written or run.
 
 `radxa-download-*` are small, unencrypted platform helpers for downloading and
 unlocking the package. They contain neither the appliance application nor the
